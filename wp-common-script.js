@@ -2254,6 +2254,28 @@ let stripe;
 let elements;
 
 async function requestReservation() {
+  // setup stripe payment
+  try {
+    const { setupIntent, error } = await stripe.confirmSetup({
+      elements,
+      confirmParams: {
+        return_url: window.location.href,
+      },
+      redirect: "if_required",
+    });
+
+    if (error) throw new Error(error.message);
+
+    // Handle successful setup confirmation
+    const paymentMethodId = setupIntent?.payment_method;
+    const clientSecret = setupIntent?.client_secret;
+    const paymentId = setupIntent?.id;
+
+    console.log(paymentMethodId, clientSecret, paymentId);
+  } catch (error) {
+    console.log(error.message);
+  }
+  return;
   activeAlertModal("processing...");
 
   // make reservation request.
@@ -2269,13 +2291,6 @@ async function requestReservation() {
     }
   }
 
-  // const dateInput = jQuery(".checkout-form-input-date");
-
-  // if (!dateInput.val()) {
-  //   dateInput.css("border", "1px solid rgb(196, 58, 58)");
-  //   formErrors = true;
-  // }
-
   // check for input error;
   if (formErrors) {
     activeAlertModal("Please fill all inputs");
@@ -2290,30 +2305,105 @@ async function requestReservation() {
 
   formData.telephone = telCode + formData.telephone;
 
-  // delete code
+  // setup stripe payment
+  try {
+    const { setupIntent, error } = await stripe.confirmSetup({
+      elements,
+      confirmParams: {
+        return_url: window.location.href,
+      },
+      redirect: "if_required",
+    });
 
-  // create a reservation
-  // reservation post body obj
+    if (error) throw new Error(error.message);
+
+    // Handle successful setup confirmation
+    const paymentMethodId = setupIntent?.payment_method;
+    const clientSecret = setupIntent?.client_secret;
+    const paymentId = setupIntent?.id;
+
+    // check stripe payment error
+    if (!paymentMethodId || !clientSecret || !paymentId) {
+      return activeAlertModal("Unable to process payment info try again.");
+    }
+
+    const addonsCount = jQuery("#checkout-page").attr("data-basecamp-addons");
+
+    //   if addon's doesn't exist then create reservation
+    if (addonsCount) {
+      let addonsPageUrl = `${homeUrl}/addons?checkout_id=${listingId}&price=${totalPrice}&adults_persons=${adultPersons}&first_day=${firstSelectedDate}&second_day=${secondSelectedDate}&reservationCouponId=${reservationCouponId}&first_name=${formData.firstName}&last_name=${formData.lastName}&zip_code=${formData.zipCode}&address=${formData.address}&city=${formData.city}&country=${formData.selectedCountry}&email=${formData.email}&phone=${formData.telephone}&message=${formData.message}&payment_method_id=${paymentMethodId}&client_secret=${clientSecret}&payment_id=${paymentId}`;
+      window.location.href = addonsPageUrl;
+    } else {
+      await purchaseReservation(
+        firstSelectedDate,
+        secondSelectedDate,
+        adultPersons,
+        reservationCouponId,
+        listingId,
+        totalPrice,
+        formData.firstName,
+        formData.lastName,
+        formData.zipCode,
+        formData.address,
+        formData.city,
+        formData.selectedCountry,
+        formData.email,
+        formData.telephone,
+        "USD",
+        formData.message,
+        paymentMethodId,
+        clientSecret,
+        paymentId
+      );
+    }
+  } catch (error) {
+    console.log(error);
+    activeAlertModal(error?.message);
+    return;
+  }
+}
+
+async function purchaseReservation(
+  startingDate,
+  endingDate,
+  numberOfGuests,
+  reservationCouponId,
+  listingId,
+  price,
+  firstName,
+  lastName,
+  zipCode,
+  address,
+  city,
+  country,
+  email,
+  phone,
+  currency,
+  comment,
+  paymentMethodId,
+  clientSecret,
+  paymentId
+) {
   const postBody = {
-    startingDate: firstSelectedDate,
-    endingDate: secondSelectedDate,
-    numberOfGuests: adultPersons,
-    reservationCouponId: reservationCouponId,
-    listingId: listingId,
-    price: totalPrice,
-    firstName: formData.firstName,
-    lastName: formData.lastName,
-    zipCode: formData.zipCode,
-    address: formData.address,
-    city: formData.city,
-    country: selectedCountry,
-    email: formData.email,
-    phone: formData.telephone,
-    currency: "USD",
-    comment: formData.message,
-    // paymentMethodId,
-    // clientSecret,
-    // paymentId,
+    startingDate,
+    endingDate,
+    numberOfGuests,
+    reservationCouponId,
+    listingId,
+    price,
+    firstName,
+    lastName,
+    zipCode,
+    address,
+    city,
+    country,
+    email,
+    phone,
+    currency,
+    comment,
+    paymentMethodId,
+    clientSecret,
+    paymentId,
   };
 
   // Make API call for reservation using fetch
@@ -2333,38 +2423,11 @@ async function requestReservation() {
     }
     const responseData = await response.json();
     console.log(responseData);
-    return;
     if (responseData.status === 200) {
       activeAlertModal("Reservation success");
 
-      //  dealy the redirection for addons page or home page 1000ms;
-      setTimeout(() => {
-        // check if addons exist then redirect to addons page if not then home page
-        // check if addons exist for this basecamp
-        const addonsCount = jQuery("#checkout-page").attr(
-          "data-basecamp-addons"
-        );
-        if (parseInt(addonsCount)) {
-          const { channelReservationId, hostawayReservationId, reservationId } =
-            responseData?.data?.result;
-          // window.location.href = `${homeUrl}/addons?checkout_id=${listingId}&reservation_id=${reservationId}&hostway_reservation_id=${hostawayReservationId}&channel_reservation_id=${channelReservationId}&adults=${adultPersons}&first_day=${firstSelectedDate}&second_day=${secondSelectedDate}&total_price=${totalPrice}&reservationCouponId=${reservationCouponId}`;
-        } else {
-          activeAlertModal("Thank you for your reservation.");
-          // setTimeout(() => {
-          //   let count = 3;
-          //   const intervalId = setInterval(() => {
-          //     if (count === 0) {
-          //       clearInterval(intervalId);
-          //       hideAlertModal();
-          //       window.location.href = homeUrl;
-          //     } else {
-          //       activeAlertModal(`Redirecting to Home page in ${count}`);
-          //       count--;
-          //     }
-          //   }, 700);
-          // }, 1000);
-        }
-      }, 1000);
+      //   redirect to home page
+      window.location.href = `${homeUrl}`;
     } else if (responseData.status === 400) {
       const errMessage = responseData?.result?.message;
       activeAlertModal(errMessage);
@@ -2374,118 +2437,6 @@ async function requestReservation() {
     activeAlertModal(
       "Reservation Failed: Some required information is missing. Please fill in all required fields and try again."
     );
-  }
-  // delete code
-  return;
-  // setup stripe payment
-  try {
-    const { setupIntent, error } = await stripe.confirmSetup({
-      elements,
-      confirmParams: {
-        return_url: window.location.href,
-      },
-      redirect: "if_required",
-    });
-
-    if (error) throw new Error(error.message);
-
-    // Handle successful setup confirmation
-    const paymentMethodId = setupIntent?.payment_method;
-    const clientSecret = setupIntent?.client_secret;
-    const paymentId = setupIntent?.id;
-
-    // create a reservation
-    // reservation post body obj
-    const postBody = {
-      startingDate: firstSelectedDate,
-      endingDate: secondSelectedDate,
-      numberOfGuests: adultPersons,
-      reservationCouponId: reservationCouponId,
-      listingId: listingId,
-      price: totalPrice,
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      zipCode: formData.zipCode,
-      address: formData.address,
-      city: formData.city,
-      country: selectedCountry,
-      email: formData.email,
-      phone: formData.telephone,
-      currency: "USD",
-      comment: formData.message,
-      paymentMethodId,
-      clientSecret,
-      paymentId,
-    };
-
-    // Make API call for reservation using fetch
-    try {
-      const response = await fetch(
-        `${homeUrl}/wp-json/hostway/v1/reservations/create`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(postBody),
-        }
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const responseData = await response.json();
-      console.log(responseData);
-      return;
-      if (responseData.status === 200) {
-        activeAlertModal("Reservation success");
-
-        //  dealy the redirection for addons page or home page 1000ms;
-        setTimeout(() => {
-          // check if addons exist then redirect to addons page if not then home page
-          // check if addons exist for this basecamp
-          const addonsCount = jQuery("#checkout-page").attr(
-            "data-basecamp-addons"
-          );
-          if (parseInt(addonsCount)) {
-            const {
-              channelReservationId,
-              hostawayReservationId,
-              reservationId,
-            } = responseData?.data?.result;
-            // window.location.href = `${homeUrl}/addons?checkout_id=${listingId}&reservation_id=${reservationId}&hostway_reservation_id=${hostawayReservationId}&channel_reservation_id=${channelReservationId}&adults=${adultPersons}&first_day=${firstSelectedDate}&second_day=${secondSelectedDate}&total_price=${totalPrice}&reservationCouponId=${reservationCouponId}`;
-          } else {
-            activeAlertModal("Thank you for your reservation.");
-            // setTimeout(() => {
-            //   let count = 3;
-            //   const intervalId = setInterval(() => {
-            //     if (count === 0) {
-            //       clearInterval(intervalId);
-            //       hideAlertModal();
-            //       window.location.href = homeUrl;
-            //     } else {
-            //       activeAlertModal(`Redirecting to Home page in ${count}`);
-            //       count--;
-            //     }
-            //   }, 700);
-            // }, 1000);
-          }
-        }, 1000);
-      } else if (responseData.status === 400) {
-        const errMessage = responseData?.result?.message;
-        activeAlertModal(errMessage);
-      }
-    } catch (error) {
-      console.error("Error:", error);
-      activeAlertModal(
-        "Reservation Failed: Some required information is missing. Please fill in all required fields and try again."
-      );
-    }
-
-    console.log(setupIntent);
-  } catch (error) {
-    console.log(error);
-    activeAlertModal(error?.message);
-    return;
   }
 }
 
@@ -2768,6 +2719,8 @@ function calculateAddonsPageTotalPrice() {
   const adults = urlParams.get("adults");
   const checkoutTotalPrice = urlParams.get("total_price");
 
+  console.log(urlParams);
+
   reservationDetails = {
     ...reservationDetails,
     basecampId,
@@ -2856,7 +2809,7 @@ async function requestPurchase() {
 // stripe pament scripts starts
 
 async function initializeStripe(id) {
-  console.log("function called");
+  console.log("initialize stripe function called");
   // get the publishable key and payment intent secret key.
 
   let publishableKey = "";
